@@ -157,9 +157,11 @@ Resources:
           Name: LoadBalancer
           Value:  !GetAtt CustomResource.ALBId
 
-      EvaluationPeriods: 1
+      EvaluationPeriods: 2
       MetricName: HealthyHostCount
       Namespace: AWS/ApplicationELB
+      OKActions:
+        - Fn::ImportValue: !Sub ${env}-ServiceHealthTopic
       Period: 60
       Statistic: Maximum
       Threshold: 0.0
