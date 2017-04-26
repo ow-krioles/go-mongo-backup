@@ -180,7 +180,7 @@ Resources:
           URL:
             Fn::Join:
               - ""
-              - - "http://core2-proxy."
+              - - "http://core-proxy."
                 - Fn::ImportValue: !Sub ${env}-PrivateDomain
                 - "/mongo-backup/"
       FunctionName: !Sub ${env}-mongo-backup
@@ -241,7 +241,7 @@ Resources:
           Values:
             - !Sub /${name}/*
       ListenerArn: !Ref listenerarn
-      Priority: !Ref priority
+      Priority: 34
 
   ScheduledEvent:
     Properties:
