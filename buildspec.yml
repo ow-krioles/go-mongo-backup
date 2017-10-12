@@ -8,7 +8,6 @@ phases:
   install:
     commands:
       - echo "Install phase"
-      - pwd
   pre_build:
     commands:
       - echo "Pre-Build phase"
@@ -21,7 +20,7 @@ phases:
       - echo "Build phase"
       - export GOPATH=$(pwd)
       - go get -t -d -v
-      - CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-s'
+      - CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-s' -o go-mongo-backup
       - docker build -t ${IMAGE_NAME} .
       - docker tag ${IMAGE_NAME} ${DOCKER_REGISTRY}/$(cat git_branch)/${IMAGE_NAME}:$(cat composite_version)
       - docker tag ${IMAGE_NAME} ${DOCKER_REGISTRY}/$(cat git_branch)/${IMAGE_NAME}:latest
