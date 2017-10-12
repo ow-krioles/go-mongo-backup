@@ -16,12 +16,6 @@ Parameters:
   namespace:
     Description: Docker namespace
     Type: String
-  priority:
-    Description: ALB priority
-    Type: Number
-  region:
-    Description: AWS region i.e. us-east-1
-    Type: String
   vpcid:
     Description: ID of the VPC for the service
     Type: String
@@ -118,7 +112,7 @@ Resources:
               Value: !Ref env
             -
               Name: ENVIRONMENT_REGION
-              Value: !Ref region
+              Value: !Ref AWS::Region
             -
               Name: SERVICE_NAME
               Value: !Ref name
