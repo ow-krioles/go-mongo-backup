@@ -24,7 +24,7 @@ phases:
       - docker build -t ${IMAGE_NAME} .
       - docker tag ${IMAGE_NAME} ${DOCKER_REGISTRY}/$(cat git_branch)/${IMAGE_NAME}:$(cat composite_version)
       - docker tag ${IMAGE_NAME} ${DOCKER_REGISTRY}/$(cat git_branch)/${IMAGE_NAME}:latest
-      - cd lambda/mongo-backup && zip -r ../../mongoBackup-$(composite_version).zip . && cd ../..
+      - cd lambda/mongo-backup && zip -r ../../mongoBackup-$(cat composite_version).zip . && cd ../..
   post_build:
     commands:
       - echo "Post-Build phase"
@@ -33,7 +33,7 @@ phases:
       - zip -r deploy-${IMAGE_NAME}.zip cloudformation/${IMAGE_NAME}.yml
       - docker push ${DOCKER_REGISTRY}/$(cat git_branch)/${IMAGE_NAME}:$(cat composite_version)
       - docker push ${DOCKER_REGISTRY}/$(cat git_branch)/${IMAGE_NAME}:latest
-      - aws s3 cp mongoBackup-$(composite_version).zip s3://net-platform-devops-${ENV}/lambda/mongoBackup-$(composite_version).zip
+      - aws s3 cp mongoBackup-$(cat composite_version).zip s3://net-platform-devops-${ENV}/lambda/mongoBackup-$(cat composite_version).zip
       - |
         if [ "$(cat git_branch)" = "develop" ]; then
           aws s3 cp --acl bucket-owner-full-control deploy-${IMAGE_NAME}.zip s3://pipeline-artifacts-ddev/
