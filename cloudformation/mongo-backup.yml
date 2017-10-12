@@ -139,6 +139,7 @@ Resources:
               ContainerPort: 8080
               HostPort: 0
               Protocol: tcp
+      Family: !Sub ${name}-${env}
       TaskRoleArn : !GetAtt ContainerRole.Arn
     Type: AWS::ECS::TaskDefinition
 
