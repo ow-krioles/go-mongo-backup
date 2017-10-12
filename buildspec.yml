@@ -24,7 +24,7 @@ phases:
       - docker build -t ${IMAGE_NAME} .
       - docker tag ${IMAGE_NAME} ${DOCKER_REGISTRY}/$(cat git_branch)/${IMAGE_NAME}:$(cat composite_version)
       - docker tag ${IMAGE_NAME} ${DOCKER_REGISTRY}/$(cat git_branch)/${IMAGE_NAME}:latest
-      - cd lambda/mongo-backup && zip -r ../../mongoBackup-$(cat composite_version).zip . && cd ../..
+      - cd lambda/mongo-backup && zip -r ../../mongoBackup-$(cat ../../composite_version).zip . && cd ../..
   post_build:
     commands:
       - echo "Post-Build phase"
