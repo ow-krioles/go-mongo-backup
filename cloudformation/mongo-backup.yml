@@ -124,7 +124,7 @@ Resources:
                   - - mongodb.
                     - Fn::ImportValue: !Sub ${env}-PrivateDomain
           Essential: true
-          Image: !Sub 639193537090.dkr.ecr.us-east-1.amazonaws.com/${namespace}/go-mongo-backup:${version}
+          Image: !Sub 639193537090.dkr.ecr.us-east-1.amazonaws.com/${namespace}/mongo-backup:${version}
           Memory: 1024
           MemoryReservation: 300
           Name: !Ref name

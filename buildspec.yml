@@ -30,6 +30,7 @@ phases:
       - echo "Post-Build phase"
       - create_parameter_file.py --name ${IMAGE_NAME} --cluster core --port 80
       - zip -j deploy-${IMAGE_NAME}.zip git_branch composite_version specfiles/deploy-only/buildspec.yml
+      - zip -j deploy-${IMAGE_NAME}.zip mongoBackup-$(cat composite_version).zip
       - zip -r deploy-${IMAGE_NAME}.zip cloudformation/${IMAGE_NAME}.yml
       - docker push ${DOCKER_REGISTRY}/$(cat git_branch)/${IMAGE_NAME}:$(cat composite_version)
       - docker push ${DOCKER_REGISTRY}/$(cat git_branch)/${IMAGE_NAME}:latest
