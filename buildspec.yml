@@ -8,6 +8,7 @@ phases:
   install:
     commands:
       - echo "Install phase"
+      - pwd
   pre_build:
     commands:
       - echo "Pre-Build phase"
