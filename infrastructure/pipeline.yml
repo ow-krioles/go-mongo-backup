@@ -47,7 +47,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
-        Statement: 
+        Statement:
           - Action: sts:AssumeRole
             Effect: Allow
             Principal:
@@ -57,7 +57,7 @@ Resources:
       Policies:
         - PolicyName: CodeBuildAccess
           PolicyDocument:
-            Statement: 
+            Statement:
               - Action: "*"
                 Effect: Allow
                 Resource: "*"
@@ -68,7 +68,7 @@ Resources:
       Artifacts:
         Type: CODEPIPELINE
       Description: Build and test code
-      Environment: 
+      Environment:
         ComputeType: BUILD_GENERAL1_SMALL
         EnvironmentVariables:
           - Name: ENV
@@ -87,7 +87,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
-        Statement: 
+        Statement:
           - Action: sts:AssumeRole
             Effect: Allow
             Principal:
@@ -97,7 +97,7 @@ Resources:
       Policies:
         - PolicyName: CodePipelineAccess
           PolicyDocument:
-            Statement: 
+            Statement:
               - Action: "*"
                 Effect: Allow
                 Resource: "*"
@@ -106,7 +106,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
-        Statement: 
+        Statement:
           - Action: sts:AssumeRole
             Effect: Allow
             Principal:
@@ -116,121 +116,121 @@ Resources:
       Policies:
         - PolicyName: CloudFormationAccess
           PolicyDocument:
-            Statement: 
+            Statement:
               - Action: "*"
                 Effect: Allow
                 Resource: "*"
 
-  Pipeline: 
+  Pipeline:
     Condition: 'NotDeployOnly'
     Type: AWS::CodePipeline::Pipeline
-    Properties: 
-      ArtifactStore: 
+    Properties:
+      ArtifactStore:
         Type: S3
         Location: !Join ['', [ 'pipeline-artifacts-', !GetAtt PodName.ParameterValue]]
       Name: mongo-backup
       RoleArn: !GetAtt PipelineRole.Arn
-      Stages: 
+      Stages:
         - Name: Source
-          Actions: 
+          Actions:
             - Name: go-mongo-backup
-              ActionTypeId: 
+              ActionTypeId:
                 Category: Source
                 Owner: ThirdParty
                 Provider: GitHub
                 Version: 1
-              Configuration: 
+              Configuration:
                 Branch: !GetAtt GitBranch.ParameterValue
                 OAuthToken: !GetAtt GitOAuthToken.ParameterValue
                 Owner: OpenWhere
                 Repo: go-mongo-backup
-              OutputArtifacts: 
+              OutputArtifacts:
                 - Name: Source
         - Name: Build
-          Actions: 
+          Actions:
             - Name: build
-              ActionTypeId: 
+              ActionTypeId:
                 Category: Build
                 Owner: AWS
                 Provider: CodeBuild
                 Version: 1
-              Configuration: 
+              Configuration:
                 ProjectName: !Ref Build
-              InputArtifacts: 
+              InputArtifacts:
                 - Name: Source
-              OutputArtifacts: 
+              OutputArtifacts:
                 - Name: Build
         - Name: Deploy
-          Actions: 
+          Actions:
             - Name: mongo-backup-core
-              ActionTypeId: 
+              ActionTypeId:
                 Category: Deploy
                 Owner: AWS
                 Provider: CloudFormation
                 Version: 1
-              Configuration: 
+              Configuration:
                 ActionMode: CREATE_UPDATE
                 Capabilities: CAPABILITY_IAM
                 RoleArn: !GetAtt CloudFormationRole.Arn
                 StackName: !Join ['', [ !GetAtt EnvironmentName.ParameterValue, '-mongo-backup-core']]
                 TemplateConfiguration: Build::mongo-backup-core.parameters
                 TemplatePath: Build::mongo-backup.yml
-              InputArtifacts: 
+              InputArtifacts:
                 - Name: Build
 
-  DeployOnlyPipeline: 
+  DeployOnlyPipeline:
     Condition: 'DeployOnly'
     Type: AWS::CodePipeline::Pipeline
-    Properties: 
-      ArtifactStore: 
+    Properties:
+      ArtifactStore:
         Type: S3
         Location: !Join ['', [ 'pipeline-artifacts-', !GetAtt PodName.ParameterValue]]
       Name: mongo-backup
       RoleArn: !GetAtt PipelineRole.Arn
-      Stages: 
+      Stages:
         - Name: Source
-          Actions: 
+          Actions:
             - Name: go-mongo-backup
-              ActionTypeId: 
+              ActionTypeId:
                 Category: Source
                 Owner: AWS
                 Provider: S3
                 Version: 1
-              Configuration: 
+              Configuration:
                 S3Bucket: !Join ['', [ 'pipeline-artifacts-', !GetAtt PodName.ParameterValue]]
                 S3ObjectKey: deploy-mongo-backup.zip
-              OutputArtifacts: 
+              OutputArtifacts:
                 - Name: Source
         - Name: Build
-          Actions: 
+          Actions:
             - Name: build
-              ActionTypeId: 
+              ActionTypeId:
                 Category: Build
                 Owner: AWS
                 Provider: CodeBuild
                 Version: 1
-              Configuration: 
+              Configuration:
                 ProjectName: !Ref Build
-              InputArtifacts: 
+              InputArtifacts:
                 - Name: Source
-              OutputArtifacts: 
+              OutputArtifacts:
                 - Name: Build
         - Name: Deploy
-          Actions: 
+          Actions:
             - Name: mongo-backup-core
-              ActionTypeId: 
+              ActionTypeId:
                 Category: Deploy
                 Owner: AWS
                 Provider: CloudFormation
                 Version: 1
-              Configuration: 
+              Configuration:
                 ActionMode: CREATE_UPDATE
                 Capabilities: CAPABILITY_IAM
                 RoleArn: !GetAtt CloudFormationRole.Arn
                 StackName: !Join ['', [ !GetAtt EnvironmentName.ParameterValue, '-mongo-backup-core']]
                 TemplateConfiguration: Build::mongo-backup-core.parameters
                 TemplatePath: Build::mongo-backup.yml
-              InputArtifacts: 
+              InputArtifacts:
                 - Name: Build
 
   BuildLogGroup:
