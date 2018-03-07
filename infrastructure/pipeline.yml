@@ -1,48 +1,80 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: CodePipeline go-mongo-backup
+Description: 'CodePipeline REPOSITORY_NAME'
 Parameters:
-  DeployOnly:
-    AllowedValues:
-    - 'false'
-    - 'true'
+#
+# The following parameters must be manually set by the creator
+#
+  ClusterName:
+    Default: 'core'
+    Description: 'Name of ECS cluster'
+    Type: String
+  InstallInApplicationPod:
     Default: 'true'
-    Description: Deploy only? (true/false)
+    Description: 'Install this application in application pods (true/false)?'
+    Type: String
+  InstallInDataPod:
+    Default: 'true'
+    Description: 'Install this application in data pods (true/false)?'
+    Type: String
+  PrivilegedMode:
+    Default: 'true'
+    Description: 'Set to true for docker container builds and false for all others'
+    Type: String
+  ServiceName:
+    Default: 'mongo-backup'
+    Description: 'Name of service'
     Type: String
 
+#
+# The following parameters should not be modified,
+# they are set by pipeline creator.
+#
+  ArtifactPath:
+    Description: 'Path to source artifact in bucket'
+    Type: String
+  DataPod:
+    Description: 'Name of the data pod'
+    Type: AWS::SSM::Parameter::Value<String>
+  DeployOnly:
+    Description: 'Deploy only pod?'
+    Type: AWS::SSM::Parameter::Value<String>
+  EnvironmentName:
+    Description: 'Name of the environment'
+    Type: AWS::SSM::Parameter::Value<String>
+  GitOAuthToken:
+    Description: 'Needed to log into GitHub'
+    NoEcho: true
+    Type: String
+  PodName:
+    Description: 'Name of the pod'
+    Type: AWS::SSM::Parameter::Value<String>
+  PrivateSubnetIds:
+    Description: Subnets the instances will run in
+    Type: List<AWS::EC2::Subnet::Id>
+  RepositoryName:
+    Description: 'GitHub repository name'
+    Type: String
+  RepositoryOwner:
+    Description: 'GitHub repository owner'
+    Type: String
+  TrustedNetworksGroupId:
+    Description: Trusted Networks Security Group ID
+    Type: AWS::EC2::SecurityGroup::Id
+  VpcId:
+    Description: VPC ID
+    Type: AWS::EC2::VPC::Id
+
 Conditions:
-  DeployOnly: !Equals [!Ref 'DeployOnly', 'true']
+  DoDeploy: !Or
+    - !And
+      - !Not [!Equals [!Ref 'DataPod', !Ref 'PodName']]
+      - !Equals [!Ref 'InstallInApplicationPod', 'true']
+    - !And
+      - !Equals [!Ref 'DataPod', !Ref 'PodName']
+      - !Equals [!Ref 'InstallInDataPod', 'true']
   NotDeployOnly: !Equals [!Ref 'DeployOnly', 'false']
 
 Resources:
-  EnvironmentName:
-    Type: Custom::CfnParamStore
-    Properties:
-      ServiceToken: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:CfnGetParamStore
-      ParameterName: EnvironmentName
-      WithDecryption: False
-
-  PodName:
-    Type: Custom::CfnParamStore
-    Properties:
-      ServiceToken: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:CfnGetParamStore
-      ParameterName: PodName
-      WithDecryption: False
-
-  GitBranch:
-    Type: Custom::CfnParamStore
-    Properties:
-      ServiceToken: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:CfnGetParamStore
-      ParameterName: GitBranch
-      WithDecryption: False
-
-  GitOAuthToken:
-    Type: Custom::CfnParamStore
-    Properties:
-      ServiceToken: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:CfnGetParamStore
-      ParameterName:
-        !If ['DeployOnly', !Ref 'AWS::NoValue', 'GitOAuthToken']
-      WithDecryption: True
-
   BuildRole:
     Type: AWS::IAM::Role
     Properties:
@@ -58,30 +90,108 @@ Resources:
         - PolicyName: CodeBuildAccess
           PolicyDocument:
             Statement:
-              - Action: "*"
+              - Action: '*'
                 Effect: Allow
-                Resource: "*"
+                Resource: '*'
 
   Build:
     Type: AWS::CodeBuild::Project
     Properties:
       Artifacts:
         Type: CODEPIPELINE
-      Description: Build and test code
+      Cache:
+        Location: !Sub 'pipeline-artifacts-${PodName}/${ServiceName}/Cache'
+        Type: S3
+      Description: 'Build code'
       Environment:
         ComputeType: BUILD_GENERAL1_SMALL
         EnvironmentVariables:
+          - Name: CLUSTER_NAME
+            Value: !Ref 'ClusterName'
           - Name: ENV
-            Value: !GetAtt EnvironmentName.ParameterValue
+            Value: !Ref 'EnvironmentName'
           - Name: IMAGE_NAME
-            Value: mongo-backup
-        Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/build-image:latest
-        PrivilegedMode: true
+            Value: !Ref 'ServiceName'
+          - Name: POD
+            Value: !Ref 'PodName'
+        Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/build-image:latest'
+        PrivilegedMode: !Ref 'PrivilegedMode'
         Type: LINUX_CONTAINER
-      Name: mongo-backup-build
+      Name: !Sub '${PodName}-${ServiceName}-build'
       ServiceRole: !GetAtt BuildRole.Arn
       Source:
         Type: CODEPIPELINE
+
+  PrBuild:
+    Condition: NotDeployOnly
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Cache:
+        Location: !Sub 'pipeline-artifacts-${PodName}/${ServiceName}/Cache'
+        Type: S3
+      Description: 'Pull Requests tests'
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        EnvironmentVariables:
+          - Name: CLUSTER_NAME
+            Value: !Ref 'ClusterName'
+          - Name: ENV
+            Value: !Ref 'EnvironmentName'
+          - Name: IMAGE_NAME
+            Value: !Ref 'ServiceName'
+          - Name: POD
+            Value: !Ref 'PodName'
+        Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/build-image:latest'
+        PrivilegedMode: !Ref 'PrivilegedMode'
+        Type: LINUX_CONTAINER
+      Name: !Sub '${PodName}-${ServiceName}-pr-build'
+      ServiceRole: !GetAtt BuildRole.Arn
+      Source:
+        Auth:
+          Type: OAUTH
+          Resource: !Ref 'GitOAuthToken'
+        BuildSpec: 'specfiles/pr/buildspec.yml'
+        Location: !Sub 'https://github.com/${RepositoryOwner}/${RepositoryName}.git'
+        Type: GITHUB
+      Triggers:
+        Webhook: True
+
+  SecurityBuild:
+    Condition: NotDeployOnly
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Cache:
+        Location: !Sub 'pipeline-artifacts-${PodName}/${ServiceName}/Cache'
+        Type: S3
+      Description: 'Security build and test'
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        EnvironmentVariables:
+          - Name: CLUSTER_NAME
+            Value: !Ref 'ClusterName'
+          - Name: ENV
+            Value: !Ref 'EnvironmentName'
+          - Name: IMAGE_NAME
+            Value: !Ref 'ServiceName'
+          - Name: POD
+            Value: !Ref 'PodName'
+        Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/build-image:latest'
+        PrivilegedMode: !Ref 'PrivilegedMode'
+        Type: LINUX_CONTAINER
+      Name: !Sub '${PodName}-${ServiceName}-security-build'
+      ServiceRole: !GetAtt BuildRole.Arn
+      Source:
+        BuildSpec: 'specfiles/security/buildspec.yml'
+        Type: CODEPIPELINE
+      VpcConfig:
+        VpcId: !Ref VpcId
+        Subnets: !Ref PrivateSubnetIds
+        SecurityGroupIds: [!Ref TrustedNetworksGroupId]
+
 
   PipelineRole:
     Type: AWS::IAM::Role
@@ -98,9 +208,9 @@ Resources:
         - PolicyName: CodePipelineAccess
           PolicyDocument:
             Statement:
-              - Action: "*"
+              - Action: '*'
                 Effect: Allow
-                Resource: "*"
+                Resource: '*'
 
   CloudFormationRole:
     Type: AWS::IAM::Role
@@ -117,93 +227,37 @@ Resources:
         - PolicyName: CloudFormationAccess
           PolicyDocument:
             Statement:
-              - Action: "*"
+              - Action: '*'
                 Effect: Allow
-                Resource: "*"
+                Resource: '*'
 
   Pipeline:
-    Condition: 'NotDeployOnly'
     Type: AWS::CodePipeline::Pipeline
     Properties:
       ArtifactStore:
         Type: S3
-        Location: !Join ['', [ 'pipeline-artifacts-', !GetAtt PodName.ParameterValue]]
-      Name: mongo-backup
+        Location: !Sub 'pipeline-artifacts-${PodName}'
+      Name: !Sub '${PodName}-${ServiceName}'
       RoleArn: !GetAtt PipelineRole.Arn
       Stages:
         - Name: Source
           Actions:
-            - Name: go-mongo-backup
-              ActionTypeId:
-                Category: Source
-                Owner: ThirdParty
-                Provider: GitHub
-                Version: 1
-              Configuration:
-                Branch: !GetAtt GitBranch.ParameterValue
-                OAuthToken: !GetAtt GitOAuthToken.ParameterValue
-                Owner: OpenWhere
-                Repo: go-mongo-backup
-              OutputArtifacts:
-                - Name: Source
-        - Name: Build
-          Actions:
-            - Name: build
-              ActionTypeId:
-                Category: Build
-                Owner: AWS
-                Provider: CodeBuild
-                Version: 1
-              Configuration:
-                ProjectName: !Ref Build
-              InputArtifacts:
-                - Name: Source
-              OutputArtifacts:
-                - Name: Build
-        - Name: Deploy
-          Actions:
-            - Name: mongo-backup-core
-              ActionTypeId:
-                Category: Deploy
-                Owner: AWS
-                Provider: CloudFormation
-                Version: 1
-              Configuration:
-                ActionMode: CREATE_UPDATE
-                Capabilities: CAPABILITY_IAM
-                RoleArn: !GetAtt CloudFormationRole.Arn
-                StackName: !Join ['', [ !GetAtt EnvironmentName.ParameterValue, '-mongo-backup-core']]
-                TemplateConfiguration: Build::mongo-backup-core.parameters
-                TemplatePath: Build::mongo-backup.yml
-              InputArtifacts:
-                - Name: Build
-
-  DeployOnlyPipeline:
-    Condition: 'DeployOnly'
-    Type: AWS::CodePipeline::Pipeline
-    Properties:
-      ArtifactStore:
-        Type: S3
-        Location: !Join ['', [ 'pipeline-artifacts-', !GetAtt PodName.ParameterValue]]
-      Name: mongo-backup
-      RoleArn: !GetAtt PipelineRole.Arn
-      Stages:
-        - Name: Source
-          Actions:
-            - Name: go-mongo-backup
+            - Name: !Ref 'ServiceName'
               ActionTypeId:
                 Category: Source
                 Owner: AWS
                 Provider: S3
                 Version: 1
               Configuration:
-                S3Bucket: !Join ['', [ 'pipeline-artifacts-', !GetAtt PodName.ParameterValue]]
-                S3ObjectKey: deploy-mongo-backup.zip
+                PollForSourceChanges: false
+                S3Bucket: !Sub 'pipeline-artifacts-${PodName}'
+                S3ObjectKey: !Sub '${ArtifactPath}/${RepositoryName}.zip'
               OutputArtifacts:
                 - Name: Source
+              RunOrder: 1
         - Name: Build
           Actions:
-            - Name: build
+            - Name: !Sub '${ServiceName}-build'
               ActionTypeId:
                 Category: Build
                 Owner: AWS
@@ -215,40 +269,41 @@ Resources:
                 - Name: Source
               OutputArtifacts:
                 - Name: Build
-        - Name: Deploy
-          Actions:
-            - Name: mongo-backup-core
-              ActionTypeId:
-                Category: Deploy
-                Owner: AWS
-                Provider: CloudFormation
-                Version: 1
-              Configuration:
-                ActionMode: CREATE_UPDATE
-                Capabilities: CAPABILITY_IAM
-                RoleArn: !GetAtt CloudFormationRole.Arn
-                StackName: !Join ['', [ !GetAtt EnvironmentName.ParameterValue, '-mongo-backup-core']]
-                TemplateConfiguration: Build::mongo-backup-core.parameters
-                TemplatePath: Build::mongo-backup.yml
-              InputArtifacts:
-                - Name: Build
+              RunOrder: 1
+        - !If
+          - DoDeploy
+          - Name: !Sub '${ServiceName}-deploy'
+            Actions:
+              - Name: !Sub '${ServiceName}-${ClusterName}'
+                ActionTypeId:
+                  Category: Deploy
+                  Owner: AWS
+                  Provider: CloudFormation
+                  Version: 1
+                Configuration:
+                  ActionMode: CREATE_UPDATE
+                  Capabilities: CAPABILITY_IAM
+                  RoleArn: !GetAtt CloudFormationRole.Arn
+                  StackName: !Sub '${EnvironmentName}-${ServiceName}-${ClusterName}'
+                  TemplateConfiguration: !Sub 'Build::${ServiceName}-${ClusterName}.parameters'
+                  TemplatePath: !Sub 'Build::${ServiceName}.yml'
+                InputArtifacts:
+                  - Name: Build
+          - !Ref AWS::NoValue
 
   BuildLogGroup:
-    Type: "AWS::Logs::LogGroup"
+    Type: 'AWS::Logs::LogGroup'
     DependsOn:
     - Build
     Properties:
-      LogGroupName: !Sub "/aws/codebuild/${Build}"
+      LogGroupName: !Sub '/aws/codebuild/${Build}'
+      RetentionInDays: '30'
   BuildSubscriptionFilter:
-    Type: "AWS::Logs::SubscriptionFilter"
+    Type: 'AWS::Logs::SubscriptionFilter'
     DependsOn:
     - BuildLogGroup
     Properties:
-      LogGroupName: !Sub "/aws/codebuild/${Build}"
-      FilterPattern: ""
-      DestinationArn: !Join ['', [!Sub "arn:aws:kinesis:${AWS::Region}:${AWS::AccountId}:stream/",
-                                  !GetAtt EnvironmentName.ParameterValue,
-                                  "-logstash"]]
-      RoleArn: !Join ['', [!Sub "arn:aws:iam::${AWS::AccountId}:role/",
-                           !GetAtt EnvironmentName.ParameterValue,
-                           "-CloudWatchLogsKinesisRole"]]
+      LogGroupName: !Sub '/aws/codebuild/${Build}'
+      FilterPattern: ''
+      DestinationArn: !Sub 'arn:aws:kinesis:${AWS::Region}:${AWS::AccountId}:stream/${EnvironmentName}-logstash'
+      RoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${EnvironmentName}-CloudWatchLogsKinesisRole'
