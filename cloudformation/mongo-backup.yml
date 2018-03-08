@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: ECS Service and Task definition
+Description: mongo-backup
 Parameters:
   ClusterName:
     Description: ECS cluster name
