@@ -13,7 +13,7 @@ phases:
   post_build:
     commands:
       - echo "Post-Build phase"
-      - create_parameter_file.py --name ${IMAGE_NAME} --cluster core --port 80
+      - create_parameters.py --name ${IMAGE_NAME} --cluster ${CLUSTER_NAME}
       - aws s3 cp mongoBackup-$(cat composite_version).zip s3://net-platform-devops-${ENV}/lambda/mongoBackup-$(cat composite_version).zip
 artifacts:
   files:

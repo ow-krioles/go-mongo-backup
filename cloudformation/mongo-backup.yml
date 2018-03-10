@@ -1,26 +1,41 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: ECS Service and Task definition
+Description: mongo-backup
 Parameters:
-  cluster:
-    Description: ECS service resources.
+  ClusterName:
+    Description: ECS cluster name
     Type: String
-  env:
-    Description: ECS Cluster name i.e. deva.
+  EnvironmentName:
+    Description: Environment name
     Type: String
-  listenerarn:
+  ListenerArn:
     Description: Arn of ELB listener to attach service to
     Type: String
-  name:
-    Description: Service Name i.e. jobmanager
-    Type: String
-  namespace:
+  Namespace:
     Description: Docker namespace
     Type: String
-  vpcid:
+  PodName:
+    Description: Pod Name
+    Type: String
+  Priority:
+    Description: Listener rule priority
+    Type: String
+  PrivateDomain:
+    Description: Private domain name
+    Type: String
+  PrivateSubnetIds:
+    Description: Private subnetIds
+    Type: String
+  ServiceHealthTopic:
+    Description: Health Topic
+    Type: String
+  ServiceName:
+    Description: Service Name
+    Type: String
+  VpcId:
     Description: ID of the VPC for the service
     Type: String
-  version:
-    Description: Semantic version of service
+  Version:
+    Description: Composite version
     Type: String
 
 Resources:
@@ -28,15 +43,13 @@ Resources:
     Properties:
       AssumeRolePolicyDocument:
         Statement:
-          -
-            Action: "sts:AssumeRole"
-            Effect: "Allow"
+          - Action: 'sts:AssumeRole'
+            Effect: 'Allow'
             Principal:
-              Service: "ecs-tasks.amazonaws.com"
-      Path: "/"
+              Service: 'ecs-tasks.amazonaws.com'
+      Path: '/'
       Policies:
-        -
-          PolicyDocument:
+        - PolicyDocument:
             Statement:
                 Action:
                   - elasticloadbalancing:Describe*
@@ -45,10 +58,9 @@ Resources:
                   - ec2:Describe*
                   - ec2:AuthorizeSecurityGroupIngress
                 Effect: Allow
-                Resource: "*"
+                Resource: '*'
           PolicyName: ecs-service
-        -
-          PolicyDocument:
+        - PolicyDocument:
             Version: 2012-10-17
             Statement:
                 Action:
@@ -57,128 +69,100 @@ Resources:
                   - cloudwatch:PutMetricAlarm
                   - logs:*
                 Effect: Allow
-                Resource: "*"
+                Resource: '*'
           PolicyName: cloudwatch-basic
-        -
-          PolicyDocument:
+        - PolicyDocument:
             Version: 2012-10-17
             Statement:
-              -
-                Action:
+              - Action:
                   - s3:ListBucket
                 Effect: Allow
-                Resource: !Sub arn:aws:s3:::net-platform-mongodb-snapshots-${env}
-              -
-                Action:
+                Resource: !Sub arn:aws:s3:::net-platform-mongodb-snapshots-${EnvironmentName}
+              - Action:
                   - s3:GetObject
                   - s3:PutObject
                   - s3:ListBucketMultipartUploads
                   - s3:ListMultipartUploadParts
                 Effect: Allow
-                Resource: !Sub arn:aws:s3:::net-platform-mongodb-snapshots-${env}/*
+                Resource: !Sub arn:aws:s3:::net-platform-mongodb-snapshots-${EnvironmentName}/*
           PolicyName: mongo-snapshots
-    Type: "AWS::IAM::Role"
-
-  CustomResource:
-    DependsOn: ListenerRule
-    Properties:
-      ALBArn: !GetAtt TargetGroup.LoadBalancerArns
-      ServiceToken:
-        Fn::ImportValue:
-          !Sub ${env}-LambdaStringFunctionArn
-      TGTArn: !Ref TargetGroup
-    Type: Custom::CustomResource
+    Type: 'AWS::IAM::Role'
 
   EcsService:
     Properties:
-      Cluster: !Ref cluster
+      Cluster: !Ref ClusterName
       DesiredCount: 1
       LoadBalancers:
         -
-          ContainerName: !Ref name
+          ContainerName: !Ref ServiceName
           ContainerPort: 8080
           TargetGroupArn: !Ref TargetGroup
-      Role: !Sub ecsServiceRole-${cluster}
+      Role: !Sub ecsServiceRole-${ClusterName}
       TaskDefinition:  !Ref EcsTask
-    Type: "AWS::ECS::Service"
+    Type: 'AWS::ECS::Service'
 
   EcsTask:
     Properties:
       ContainerDefinitions:
-        -
-          Environment:
-            -
-              Name: ENVIRONMENT_NAME
-              Value: !Ref env
-            -
-              Name: ENVIRONMENT_REGION
+        - Environment:
+            - Name: ENVIRONMENT_NAME
+              Value: !Ref EnvironmentName
+            - Name: ENVIRONMENT_REGION
               Value: !Ref AWS::Region
-            -
-              Name: SERVICE_NAME
-              Value: !Ref name
-            -
-              Name: MONGOHOST
-              Value:
-                Fn::Join:
-                  - ""
-                  - - mongodb.
-                    - Fn::ImportValue: !Sub ${env}-PrivateDomain
+            - Name: SERVICE_NAME
+              Value: !Ref ServiceName
+            - Name: MONGOHOST
+              Value: !Sub 'mongodb.${PrivateDomain}'
           Essential: true
-          Image: !Sub 639193537090.dkr.ecr.us-east-1.amazonaws.com/${namespace}/mongo-backup:${version}
+          Image: !Sub 639193537090.dkr.ecr.us-east-1.amazonaws.com/${Namespace}/mongo-backup:${Version}
           Memory: 1024
           MemoryReservation: 300
-          Name: !Ref name
+          Name: !Ref ServiceName
           PortMappings:
-            -
-              ContainerPort: 8080
+            - ContainerPort: 8080
               HostPort: 0
               Protocol: tcp
-      Family: !Sub ${name}-${env}
+      Family: !Sub ${ServiceName}-${EnvironmentName}
       TaskRoleArn : !GetAtt ContainerRole.Arn
     Type: AWS::ECS::TaskDefinition
 
   HealthAlarm:
+    Type: AWS::CloudWatch::Alarm
     Properties:
-      ActionsEnabled: true
-      AlarmActions:
-        - Fn::ImportValue: !Sub ${env}-ServiceHealthTopic
       AlarmDescription: Notify SNS if there are no healthy hosts
-      ComparisonOperator: LessThanOrEqualToThreshold
-      Dimensions:
-        -
-          Name: TargetGroup
-          Value:  !GetAtt CustomResource.TGTId
-        -
-          Name: LoadBalancer
-          Value:  !GetAtt CustomResource.ALBId
-
-      EvaluationPeriods: 2
       MetricName: HealthyHostCount
       Namespace: AWS/ApplicationELB
-      OKActions:
-        - Fn::ImportValue: !Sub ${env}-ServiceHealthTopic
+      Statistic: Average
       Period: 60
-      Statistic: Maximum
+      EvaluationPeriods: 2
       Threshold: 0.0
-    Type: AWS::CloudWatch::Alarm
+      AlarmActions:
+      - !Ref ServiceHealthTopic
+      OKActions:
+      - !Ref ServiceHealthTopic
+      ComparisonOperator: LessThanOrEqualToThreshold
+      Dimensions:
+        - Name: TargetGroup
+          Value: !Select [5, !Split [':', !Ref TargetGroup]]
+        - Name: LoadBalancer
+          Value: !Join
+            - '/'
+            - - !Select [1, !Split ['/', !Ref ListenerArn]]
+              - !Select [2, !Split ['/', !Ref ListenerArn]]
+              - !Select [3, !Split ['/', !Ref ListenerArn]]
 
   Lambda:
     Properties:
       Code:
-        S3Bucket: !Sub net-platform-devops-${env}
-        S3Key: !Sub lambda/mongoBackup-${version}.zip
+        S3Bucket: !Sub net-platform-devops-${EnvironmentName}
+        S3Key: !Sub lambda/mongoBackup-${Version}.zip
       Description: Calls mongo-backup agent to start snapshot
       Environment:
         Variables:
-          BUCKET: !Sub net-platform-mongodb-snapshots-${env}
-          ROOT_PATH: !Sub '/${env}/'
-          URL:
-            Fn::Join:
-              - ""
-              - - "http://core-proxy."
-                - Fn::ImportValue: !Sub ${env}-PrivateDomain
-                - "/mongo-backup/"
-      FunctionName: !Sub ${env}-mongo-backup
+          BUCKET: !Sub net-platform-mongodb-snapshots-${EnvironmentName}
+          ROOT_PATH: !Sub '/${EnvironmentName}/'
+          URL: !Sub 'http://core-proxy.${PrivateDomain}/mongo-backup/'
+      FunctionName: !Sub ${EnvironmentName}-mongo-backup
       Handler: mongo-snapshot.handler
       Role: !GetAtt LambdaRole.Arn
       Runtime: python2.7
@@ -187,43 +171,43 @@ Resources:
         SecurityGroupIds:
           - !GetAtt LambdaSG.GroupId
         SubnetIds:
-          - Fn::ImportValue: !Sub ${env}-PrivateSubnet1Id
-          - Fn::ImportValue: !Sub ${env}-PrivateSubnet2Id
-          - Fn::ImportValue: !Sub ${env}-PrivateSubnet3Id
-    Type: "AWS::Lambda::Function"
+          - !Select [0, !Split [',', !Ref PrivateSubnetIds]]
+          - !Select [1, !Split [',', !Ref PrivateSubnetIds]]
+          - !Select [2, !Split [',', !Ref PrivateSubnetIds]]
+
+    Type: 'AWS::Lambda::Function'
 
   LambdaInvokePermission:
     Properties:
-      Action: "lambda:InvokeFunction"
+      Action: 'lambda:InvokeFunction'
       FunctionName: !Ref Lambda
       Principal: events.amazonaws.com
       SourceArn: !GetAtt ScheduledEvent.Arn
-    Type: "AWS::Lambda::Permission"
+    Type: 'AWS::Lambda::Permission'
 
   LambdaRole:
     Properties:
       AssumeRolePolicyDocument:
         Statement:
-          -
-            Action: "sts:AssumeRole"
-            Effect: "Allow"
+          - Action: 'sts:AssumeRole'
+            Effect: 'Allow'
             Principal:
-              Service: "lambda.amazonaws.com"
+              Service: 'lambda.amazonaws.com'
       ManagedPolicyArns:
-        - "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
-      Path: "/"
-    Type: "AWS::IAM::Role"
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole'
+      Path: '/'
+    Type: 'AWS::IAM::Role'
 
   LambdaSG:
     Properties:
       GroupDescription: Security Group for mongo-backup Lambda
       Tags:
         - Key: Environment
-          Value: !Ref env
+          Value: !Ref EnvironmentName
         - Key: Name
-          Value: !Sub ${env}-mongo-backup-lambda-sg
-      VpcId: !Ref vpcid
-    Type: "AWS::EC2::SecurityGroup"
+          Value: !Sub ${EnvironmentName}-mongo-backup-lambda-sg
+      VpcId: !Ref VpcId
+    Type: 'AWS::EC2::SecurityGroup'
 
   ListenerRule:
     Type: AWS::ElasticLoadBalancingV2::ListenerRule
@@ -234,44 +218,36 @@ Resources:
       Conditions:
         - Field: path-pattern
           Values:
-            - !Sub /${name}/*
-      ListenerArn: !Ref listenerarn
-      Priority: 34
+            - !Sub /${ServiceName}/*
+      ListenerArn: !Ref ListenerArn
+      Priority: !Ref Priority
 
   ScheduledEvent:
     Properties:
       Description: Trigger snapshot once a day
-      Name: !Sub MongoBackupEvent-${env}
-      ScheduleExpression: "cron(30 6 ? * * *)"
+      Name: !Sub MongoBackupEvent-${EnvironmentName}
+      ScheduleExpression: 'cron(30 6 ? * * *)'
       State: ENABLED
       Targets:
         -
           Arn: !GetAtt Lambda.Arn
-          Id: !Sub ${env}-MongoBackupLambda
-    Type: "AWS::Events::Rule"
+          Id: !Sub ${EnvironmentName}-MongoBackupLambda
+    Type: 'AWS::Events::Rule'
 
   TargetGroup:
     Properties:
-      HealthCheckPath: !Sub /${name}/
+      HealthCheckPath: !Sub /${ServiceName}/
       Matcher:
         HttpCode: '200-299'
       Port: 80
       Protocol: HTTP
       Tags:
         - Key: ServiceName
-          Value: !Ref name
+          Value: !Ref ServiceName
         - Key: ClusterName
-          Value: !Ref cluster
+          Value: !Ref ClusterName
       TargetGroupAttributes:
         - Key: deregistration_delay.timeout_seconds
           Value: '0'
-      VpcId:  !Ref vpcid
+      VpcId:  !Ref VpcId
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
-
-Outputs:
-  ALBId:
-    Description: ALBId
-    Value: !GetAtt CustomResource.ALBId
-  TGTId:
-    Description: TGTId
-    Value: !GetAtt CustomResource.TGTId
